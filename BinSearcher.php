@@ -1,69 +1,94 @@
 <?php
 
+declare(strict_types=1);
+
 class BinSearcher
 {
-    private $Res,$FileSize,$Offset,$BufferSize;
+    /**
+     * @var resource
+     */
+    private $res;
+    /**
+     * @var int
+     */
+    private $fileSize;
+    /**
+     * @var int
+     */
+    private $bufferSize = 1024;
 
-    public function __construct($FileName)
+    public function __construct(string $fileName)
     {
-        $this->BufferSize=1024;
-        if(file_exists($FileName))
-        {
-            $this->FileSize = filesize($FileName);
-            $this->Res = fopen($FileName, 'r');
+        if (file_exists($fileName)) {
+            $this->fileSize = filesize($fileName);
+            $this->res = fopen($fileName, 'r');
         }
     }
 
     public function __destruct()
     {
-        if($this->Res) fclose($this->Res);
-    }
-
-    private function GetOffset($Offset,$Char)
-    {
-        fseek($this->Res,$Offset);
-        while (!feof($this->Res)){
-            $Data=fread($this->Res,$this->BufferSize);
-            if($Pos=strpos($Data,$Char)){
-                return $Offset+$Pos;
-            }
-            $Offset+=$this->BufferSize;
+        if ($this->res) {
+            fclose($this->res);
         }
-        return false;
     }
 
-    private function GetKey($Offset)
+    /**
+     * @param string $key
+     * @return string|null
+     */
+    public function GetValue(string $key): ?string
     {
-        $Start=$this->GetOffset($Offset,0x0A);
-        $End=$this->GetOffset($Start,0x09);
-        if(!$End) return false;
-        fseek($this->Res,$Start);
-        return [$End,fread($this->Res,$End-$Start)];
-    }
-
-    public function GetValue($Key)
-    {
-        if(!$this->Res) return null;
-        $Div=2;
-        $PrevOffset=-1;
-        $this->Offset=round($this->FileSize / $Div);
-        while($PrevOffset !== $this->Offset)
-        {
-            $Result = $this->GetKey($this->Offset);
-            $Div *= 2;
-            $Compare=strnatcmp($Result[1], $Key);
-            if ($Compare === 0)
-            {
-                $EndValue=$this->GetOffset($Result[0],0x0A);
-                fseek($this->Res,$Result[0]);
-                return fread($this->Res,$EndValue-$Result[0]);
+        if (!$this->res) {
+            return null;
+        }
+        $div = 2;
+        $prevOffset = -1;
+        $offset = (int) round($this->fileSize / $div);
+        while ($prevOffset !== $offset) {
+            $start = $this->GetOffset($offset, 0x0A);
+            if (!$start) {
+                return null;
             }
-            else
-            {
-                $PrevOffset=$this->Offset;
-                $this->Offset += round($this->FileSize/$Div)*$Compare*-1;
+            $end = $this->GetOffset($start, 0x09);
+            if (!$end) {
+                return null;
+            }
+            fseek($this->res, $start);
+            $div *= 2;
+            $compare = strnatcmp(fread($this->res, $end - $start), $key);
+            if ($compare === 0) {
+                $endValue = $this->GetOffset($end, 0x0A);
+                if (!$endValue) {
+                    return null;
+                }
+                fseek($this->res, $end);
+
+                return fread($this->res, $endValue - $end);
+            } else {
+                $prevOffset = $offset;
+                $offset += (int) (round($this->fileSize / $div) * $compare * -1);
             }
         }
+
         return null;
+    }
+
+    /**
+     * @param int $offset
+     * @param int $char
+     * @return bool|int
+     */
+    private function GetOffset(int $offset, int $char)
+    {
+        fseek($this->res, $offset);
+        while (!feof($this->res)) {
+            $position = strpos(fread($this->res, $this->bufferSize), $char);
+            if ($position) {
+                return $offset + $position;
+            }
+            $offset += $this->bufferSize;
+        }
+
+        return false;
     }
 }
